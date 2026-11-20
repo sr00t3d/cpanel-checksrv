@@ -1,326 +1,110 @@
-# cPanel Check Server
+# cPanel CheckSrv (`cp-checksrv.sh`)
 
-Readme: [BR](README-ptbr.md)
+![cPanel CheckSrv Cover](./cp-checksrv-cover.webp)
 
-![License](https://img.shields.io/github/license/sr00t3d/cpanel-checksrv) ![Shell Script](https://img.shields.io/badge/language-Bash-green.svg)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](./cp-checksrv.sh)
+[![License](https://img.shields.io/badge/license-GPL--3.0-green.svg)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20cPanel%20%2F%20WHM%20%7C%20chkservd-orange.svg)](#requirements)
 
-<img width="700" src="cp-checksrv-cover.webp" />
+> 🇧🇷 **[Leia em Português (README-ptbr.md)](./README-ptbr.md)**
 
-> **Bash rewrite of the original Perl checksrv utility by Matthew Harris (HostGator) - Converted using Kimi**
+**cPanel CheckSrv** (`cp-checksrv.sh` v2.0.0) is a high-speed Bash + Python3 (stdlib-only) CLI parser for cPanel/WHM `/var/log/chkservd.log`. Designed for production hosting servers where `chkservd.log` routinely grows past 100 MB, it uses **reverse-seek chunked reading** (256 KB blocks from EOF) so auditing the latest service check cycles completes in milliseconds without loading the entire file into RAM.
 
-A fast and efficient Bash script to parse cPanel/WHM `chkservd` logs, designed to handle large log files (100MB+) without performance issues.
-
-## About
-
-This project is a **Bash rewrite** of the original Perl script `checksrv` created by **Matthew Harris** at HostGator in 2013. The original script was designed to make `/var/log/chkservd.log` human-readable by parsing service check results from cPanel's monitoring daemon.
-
-### Why a Bash Rewrite?
-
-- **Performance**: The original Perl script struggled with large log files (100MB+)
-- **Portability**: No Perl dependencies required
-- **Speed**: Optimized for modern systems using native Unix tools (`grep`, `awk`, `sed`)
-- **Colors**: Enhanced terminal output with color coding
-
-## Original Reference
-
-```perl
-#!/usr/bin/perl
-# $Date: 2013-02-15 $
-# $Revision: 1.0 $
-# $Source: /root/bin/checksrv $
-# $Author: Matthew Harris $
-# Make /var/log/chkservd.log pretty
-# https://gatorwiki.hostgator.com/Admin/RootBin#checkserv 
-# http://git.toolbox.hostgator.com/checkserv 
-# Please submit all bug reports at projects.hostgator.com
-# https://projects.hostbox.hostgator.com/projects/script-checkserv/issues/new
-```
-
-**Original Author**: Matthew Harris (HostGator)
-**Original Date**: 2013-02-15
-**Original Purpose**: Parse `/var/log/chkservd.log` for service monitoring
+---
 
 ## Features
 
+- **Reverse-Seek Chunked Reader:** Reads from the end of `/var/log/chkservd.log` backwards in 256 KB chunks, analyzing the latest `N` cycles on 100 MB+ logs in milliseconds.
+- **Per-Service Uptime Summary (`-S, --summary`):** Aggregates `CHECKS`, `OK`, `FAILED`, `UPTIME%`, and last `check command` / `socket connect` state per service across the audited window.
+- **Failure-First & Functional Modes:** Displays only failed services by default, or every monitored daemon (`httpd`, `mysql`, `exim`, `named`, `imap`, `cpsrvd`, `lfd`, `sshd`, etc.) with `-f, --functional`.
+- **Service Filter & Custom Log Path:** Isolate a single service with `-s <name>` or audit archived/rotated logs with `-l <path>`.
+- **Structured Outputs:** Export reports in aligned `table` (default), `json`, or `csv` format for `cron`, Zabbix, or incident automation.
+- **Semantic Exit Codes:** Returns `0` when all audited checks are healthy, `1` on usage/file errors, and `2` when one or more failures are detected (ready for `cp-checksrv.sh -q 1 || mail ...`).
 
-| Feature              | Description                              | Original | This Version |
-| ---------------------- | ------------------------------------------ | ---------- | -------------- |
-| Parse chkservd logs  | Read cPanel service monitor logs         | ✅       | ✅           |
-| Show failed services | Display only services with errors        | ✅       | ✅           |
-| Show all services    | Display functional services too          | ❌       | ✅ (`-f`)    |
-| Color output         | Terminal colors for better readability   | ❌       | ✅           |
-| Large file support   | Handle 100MB+ logs efficiently           | ❌       | ✅           |
-| System info          | Show chkservd PID, uptime, log size      | ❌       | ✅           |
-| Fast execution       | Optimized with`grep`/`tail` vs full read | ❌       | ✅           |
-| Quantity limit       | Adjustable number of checks to display   | ✅       | ✅ (`-q`)    |
+---
 
 ## Requirements
 
-- **Bash** 4.0+
-- **cPanel/WHM** (for `/var/log/chkservd.log`)
-- Standard Unix tools: `grep`, `sed`, `awk`, `stat`, `ps`, `tac` (optional)
+- Linux with Bash 4.0+ and Python 3.6+ (standard library only, zero external packages)
+- Read access to `/var/log/chkservd.log` (usually `root` or `sudo`)
+
+---
 
 ## Installation
 
 ```bash
-# Clone or download
-curl -O https://raw.githubusercontent.com/sr00t3d/cpanel-checksrv/refs/heads/main/checksrv.sh
-
-# Make executable
-chmod +x checksrv.sh
-
-# Optional: move to PATH
-sudo mv checksrv.sh /usr/local/bin/checksrv
+git clone https://github.com/sr00t3d/cpanel-checksrv.git
+cd cpanel-checksrv
+chmod +x cp-checksrv.sh
 ```
+
+---
 
 ## Usage
 
 ```bash
-./checksrv.sh [OPTIONS]
+# Default: show failures in the last 5 chkservd check cycles
+sudo ./cp-checksrv.sh
+
+# Show per-service uptime summary across the last 20 cycles
+sudo ./cp-checksrv.sh -S -q 20
+
+# Full status (OK + FAILED) for the latest 2 cycles
+sudo ./cp-checksrv.sh -f -q 2
+
+# Filter history for a specific service (e.g. exim)
+sudo ./cp-checksrv.sh -s exim -f -q 10
+
+# Export per-service summary as JSON
+sudo ./cp-checksrv.sh -S -q 50 -o json > chkservd-summary.json
+
+# Cron alert on any failure in the latest check cycle
+*/5 * * * * /usr/local/bin/cp-checksrv.sh -q 1 --no-color >/dev/null || echo "chkservd failure on $(hostname)" | mail -s "Alert chkservd" ops@example.com
 ```
 
-### Options
-
-
-| Option | Long Form      | Description                                      |
-| -------- | ---------------- | -------------------------------------------------- |
-| `-a`   | `--all`        | Display all service checks (last 5000 lines max) |
-| `-f`   | `--functional` | Show functional services too (with details)      |
-| `-q N` | `--quantity N` | Show last N service checks (default: 5)          |
-| `-h`   | `--help`       | Show help message                                |
-
-## Examples
-
-### 1. Check for Failures (Default)
-
-Show only failed services from last 5 checks:
-
-```bash
-./checksrv.sh
-```
-
-**Output when healthy:**
-
-```bash
---------------------------------------
-        Chksrvd Log Parser v2.0 (Bash)
---------------------------------------
-
-Analisando últimas 5 verificações...
-Nenhuma falha encontrada nas últimas verificações.
-```
-
-**Output with failures:**
-
-```bash
-[2026-03-03 09:45:12 -0300]
-        [!] httpd failed
-        [!] mysql failed
-```
-
-### 2. Detailed Service Status
-
-Show all services (functional + failed) with details:
-
-```bash
-./checksrv.sh -f -q 2
-```
-
-**Output:**
-
-```bash
---------------------------------------
-        Chksrvd Log Parser v2.0 (Bash)
---------------------------------------
-
-=== Informações do Sistema ===
-chkservd: RUNNING (PID: 1234, Uptime: 15-03:45:12)
-Log: 99 MB | Checks: 53571
-Falhas nas últimas 2000 linhas: 0
-
-Analisando últimos 2 checks completos...
-
-═══════════════════════════════════════════════════════════════
-[2026-03-03 09:45:12 -0300] Service Check (24 serviços)
-───────────────────────────────────────────────────────────────
-        [✓] queueprocd [check:+] [socket:N/A] OK
-        [✓] sshd [check:+] [socket:N/A] OK
-        [✓] spamd [check:+] [socket:N/A] OK
-        [✓] rsyslogd [check:+] [socket:N/A] OK
-        [✓] pop [check:+] [socket:+] OK
-        [✓] p0f [check:+] [socket:N/A] OK
-        [✓] nscd [check:+] [socket:N/A] OK
-        [✓] named [check:+] [socket:N/A] OK
-        [✓] mysql [check:+] [socket:N/A] OK
-        [✓] mailman [check:+] [socket:N/A] OK
-        [✓] lmtp [check:+] [socket:+] OK
-        [✓] lfd [check:+] [socket:N/A] OK
-        [✓] ipaliases [check:+] [socket:N/A] OK
-        [✓] imap [check:+] [socket:+] OK
-        [✓] httpd [check:N/A] [socket:+] OK
-        [✓] exim [check:+] [socket:+] OK
-        [✓] dnsadmin [check:+] [socket:+] OK
-        [✓] crond [check:+] [socket:N/A] OK
-        [✓] cpsrvd [check:N/A] [socket:+] OK
-        [✓] cphulkd [check:+] [socket:+] OK
-        [✓] cpdavd [check:+] [socket:N/A] OK
-        [✓] cpanellogd [check:+] [socket:N/A] OK
-        [✓] cpanel_php_fpm [check:+] [socket:N/A] OK
-        [✓] apache_php_fpm [check:+] [socket:N/A] OK
-───────────────────────────────────────────────────────────────
-        Resumo: Todos 24 serviços OK
-
-═══════════════════════════════════════════════════════════════
-[2026-03-03 09:36:36 -0300] Service Check (24 serviços)
-───────────────────────────────────────────────────────────────
-        ...
-        Resumo: Todos 24 serviços OK
-```
-
-### 3. View All Recent Checks
-
-Show all checks from the last 5000 log lines:
-
-```bash
-./checksrv.sh -f -a
-```
-
-### 4. Custom Quantity
-
-Show last 10 checks with full details:
-
-```bash
-./checksrv.sh -f -q 10
-```
-
-### 5. Minimal Check (for Cron)
-
-Silent check - only outputs if there are failures:
-
-```bash
-./checksrv.sh -q 1
-```
-
-**Perfect for cron monitoring:**
-
-```bash
-# Add to crontab
-*/5 * * * * /usr/local/bin/checksrv -q 1 || echo "Service failure detected on $(hostname)" | mail -s "Alert" admin@example.com
-```
-
-## Output Formats
-
-### Color Coding
-
-
-| Color     | Meaning                |
-| ----------- | ------------------------ |
-| 🟢 Green  | Service OK             |
-| 🔴 Red    | Service Failed         |
-| 🟡 Yellow | Timestamps and headers |
-| 🔵 Blue   | Processing messages    |
-| Cyan      | Section separators     |
-
-### Status Indicators
-
-
-| Symbol | Status         | Description                          |
-| -------- | ---------------- | -------------------------------------- |
-| `[✓]` | OK             | Service passed check                 |
-| `[!]`  | FAILED         | Service failed check                 |
-| `+`    | Success        | Command/Socket test passed           |
-| `-`    | Failure        | Command/Socket test failed           |
-| `N/A`  | Not Applicable | Check not available for this service |
-
-## ⚡ Performance
-
-Optimized for large log files:
-
-
-| Metric         | Original Perl    | This Version    |
-| ---------------- | ------------------ | ----------------- |
-| 100MB log file | ~30-60s          | ~1-3s           |
-| Memory usage   | High (full read) | Low (streaming) |
-| 1000 checks    | Slow             | Instant         |
-| 50000+ checks  | Very slow        | < 5s            |
-
-**Techniques used:**
-
-- `grep` + `tail` instead of full file read
-- `awk` for efficient parsing
-- Streaming processing (no full file in memory)
-- `tac` for reverse reading (when needed)
-
-## Troubleshooting
-
-### No output at all
-
-```bash
-# Check if log exists
-ls -la /var/log/chkservd.log
-
-# Check if chkservd is running
-systemctl status chkservd
-# or
-service chkservd status
-```
-
-### Permission denied
-
-```bash
-# Run as root or with sudo
-sudo ./checksrv.sh
-```
-
-### Script hangs
-
-The log file may be extremely large. The script limits `-a` mode to 5000 lines. Use `-q` for specific quantities.
-
-### No colors in output
-
-Colors are enabled by default. If your terminal doesn't support colors, they won't show (but output still works).
-
-## Monitored Services
-
-Typical cPanel/WHM services checked:
-
-| Category       | Services                                          |
-| ---------------- | --------------------------------------------------- |
-| **Web Server** | httpd, apache_php_fpm, cpanel_php_fpm             |
-| **Mail**       | exim, imap, pop, lmtp, mailman, spamd             |
-| **Database**   | mysql                                             |
-| **DNS**        | named, dnsadmin                                   |
-| **Security**   | cphulkd, lfd, p0f                                 |
-| **System**     | sshd, crond, rsyslogd, nscd                       |
-| **cPanel**     | cpsrvd, cpdavd, cpanellogd, ipaliases, queueprocd |
-
-## Credits
-
-- **Original Author**: Matthew Harris (HostGator)
-- **Original Date**: 2013-02-15
-- **Bash Rewrite**: 2026
-- **Purpose**: System administration tool for cPanel/WHM servers
-
-## Links
-
-- Original HostGator Wiki: `https://gatorwiki.hostgator.com/Admin/RootBin#checkserv`
-- Original Repository: `http://git.toolbox.hostgator.com/checkserv`
-
-## Legal Notice
-
-> [!WARNING]
-> This software is provided "as is." Always ensure you have explicit permission before executing it. The author is not responsible for any misuse, legal consequences, or data impact caused by this tool.
-
-## Detailed Tutorial
-
-For a complete, step-by-step guide, check out my full article:
-
-👉 [**Check services failures on cPanel**](https://perciocastelo.com.br/blog/check-services-failures-on-cpanel.html)
-
-## License
-
-This project is licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for more details.
+### CLI Options
+
+| Flag | Description |
+| :--- | :--- |
+| `-q, --quantity <N>` | Number of most recent check cycles to analyze (default: `5`) |
+| `-f, --functional` | Include healthy (`OK`) services, not only failures |
+| `-a, --all` | Scan up to `--max-lines` recent lines (default: `5000`) |
+| `--max-lines <N>` | Maximum trailing lines to read in `--all` mode (default: `5000`) |
+| `-S, --summary` | Show per-service uptime and failure summary table |
+| `-s, --service <name>` | Filter output to a specific service name |
+| `-l, --log <path>` | Custom path to `chkservd.log` (default: `/var/log/chkservd.log`) |
+| `-o, --output <fmt>` | Output format: `table` (default), `json`, `csv` |
+| `--no-color` | Disable ANSI colors |
+| `-V, --version` | Show version and exit |
+| `-h, --help` | Show help message and exit |
 
 ---
 
-**Note**: This is an unofficial rewrite and not supported/sponsored by HostGator.
+## Real Output Example
+
+Captured on an AlmaLinux 8.10 / cPanel test container running `cp-checksrv.sh -S -q 4 --no-color` over 4 check cycles (32 total service checks, 3 transient failures on `exim` and `mysql`):
+
+```text
+================================================================================================================
+ CPANEL CHECKSRV v2.0.0 - [cpanel-test.local] | Log: /tmp/chkservd-test.log (0.0 MB) | chkservd: NOT_RUNNING
+================================================================================================================
+SERVICE                | CHECKS |     OK | FAILED |  UPTIME | LAST     | LAST CHECK / SOCKET
+----------------------------------------------------------------------------------------------------------------
+cpsrvd                 |      4 |      4 |      0 |  100.0% | OK       | cmd:N/A sock:+
+exim                   |      4 |      2 |      2 |   50.0% | OK       | cmd:+ sock:+
+httpd                  |      4 |      4 |      0 |  100.0% | OK       | cmd:+ sock:+
+imap                   |      4 |      4 |      0 |  100.0% | OK       | cmd:+ sock:+
+lfd                    |      4 |      4 |      0 |  100.0% | OK       | cmd:+ sock:N/A
+mysql                  |      4 |      3 |      1 |   75.0% | OK       | cmd:+ sock:+
+named                  |      4 |      4 |      0 |  100.0% | OK       | cmd:+ sock:+
+sshd                   |      4 |      4 |      0 |  100.0% | OK       | cmd:+ sock:+
+================================================================================================================
+ Summary: 4 cycle(s) | 8 service(s) | Total checks: 32 | Failures: 3
+================================================================================================================
+```
+
+---
+
+## License
+
+Licensed under the [GPL-3.0 License](./LICENSE). Inspired by the original Perl `checksrv` utility by Matthew Harris (HostGator, 2013).
