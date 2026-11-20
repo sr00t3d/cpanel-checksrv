@@ -3,7 +3,7 @@
 ![Capa do cPanel CheckSrv](./cp-checksrv-cover.webp)
 
 [![Versão](https://img.shields.io/badge/version-2.0.0-blue.svg)](./cp-checksrv.sh)
-[![Licença](https://img.shields.io/badge/license-GPL--3.0-green.svg)](./LICENSE)
+[![Licença](https://img.shields.io/badge/license-Apache--2.0-green.svg)](./LICENSE)
 [![Plataforma](https://img.shields.io/badge/platform-Linux%20%7C%20cPanel%20%2F%20WHM%20%7C%20chkservd-orange.svg)](#requisitos)
 
 > 🇺🇸 **[Read in English (README.md)](./README.md)**
@@ -107,4 +107,4 @@ sshd                   |      4 |      4 |      0 |  100.0% | OK       | cmd:+ s
 
 ## Licença
 
-Distribuído sob a [Licença GPL-3.0](./LICENSE). Inspirado no utilitário original em Perl `checksrv` de Matthew Harris (HostGator, 2013).
+Distribuído sob a [Licença Apache-2.0](./LICENSE). Inspirado no utilitário original em Perl `checksrv` de Matthew Harris (HostGator, 2013).
